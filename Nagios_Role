@@ -1,0 +1,307 @@
+nagios installation using ansible roles on Ubuntu and Centos
+
+
+Nagios/
+├── README.md
+├── defaults
+│   └── main.yml
+├── files
+├── handlers
+│   └── main.yml
+├── inv_sa
+├── meta
+│   └── main.yml
+├── playbook.yml
+├── tasks
+│   ├── Debian-family-prerequisites.yml
+│   ├── RedHat-family-prerequisites.yml
+│   ├── download_nagios.yml
+│   ├── loc
+│   ├── main.yml
+│   ├── pluging.yml
+│   └── user_group_binaries.yml
+├── templates
+├── tests
+│   ├── inventory
+│   └── test.yml
+└── vars
+    └── main.yml
+
+
+devops@ip-172-31-1-76:~/Nagios/tasks$ pwd
+/home/devops/Nagios/tasks
+
+devops@ip-172-31-1-76:~/Nagios/tasks$ cat Debian-family-prerequisites.yml
+
+- name: Install packages for ubuntu
+  apt:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ packages_name }}"
+  when: ansible_distribution == 'Debian'
+devops@ip-172-31-1-76:~/Nagios/tasks$
+
+
+devops@ip-172-31-1-76:~/Nagios/tasks$ cat RedHat-family-prerequisites.yml
+
+- name: Install packages for Centos
+  yum:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ packages_name }}"
+  when: ansible_distribution == 'Redhat'
+devops@ip-172-31-1-76:~/Nagios/tasks$
+
+
+devops@ip-172-31-1-76:~/Nagios/tasks$ cat download_nagios.yml
+- name: Downloading the Nagios file  source to temp folder
+  get_url:
+    dest: "{{ nagios_code_location }}"
+    url: "https://github.com/NagiosEnterprises/nagioscore/archive/nagios-{{ nagios_version }}.tar.gz"
+- name: untar the Nagios file
+  unarchive:
+    src: "{{ nagios_code_location }}"
+    dest: "/tmp/"
+    remote_src: yes
+devops@ip-172-31-1-76:~/Nagios/tasks$
+
+
+devops@ip-172-31-1-76:~/Nagios/tasks$ cat user_group_binaries.yml
+- name: creating user_group_binaries
+  shell:
+    cmd: "sudo {{ item }}"
+  args:
+    chdir: "/tmp/nagioscore-nagios-{{ nagios_version }}/"
+  loop: "{{ make_package_list }}"
+
+- name: installing passlilb
+  pip: name=passlib
+- name: nagios admin account
+  htpasswd:
+    name: nagiosadmin
+    path: /usr/local/nagios/etc/htpasswd.users
+    password: nagios
+  notify: restarting services
+devops@ip-172-31-1-76:~/Nagios/tasks$
+
+
+devops@ip-172-31-1-76:~/Nagios/tasks$ cat main.yml
+---
+# tasks file for Nagios
+- include: Debian-family-prerequisites.yml
+  when: ansible_os_family == 'Debian'
+- include: RedHat-family-prerequisites.yml
+  when: ansible_os_family == 'RedHat'
+- include: download_nagios.yml
+- include: user_group_binaries.yml
+- include: pluging.yml
+
+
+devops@ip-172-31-1-76:~/Nagios$ cd vars
+devops@ip-172-31-1-76:~/Nagios/vars$ pwd
+/home/devops/Nagios/vars
+devops@ip-172-31-1-76:~/Nagios/vars$ ls -ltrh
+total 4.0K
+-rw-rw-r-- 1 devops devops 195 Mar 22 04:11 main.yml
+devops@ip-172-31-1-76:~/Nagios/vars$ cat main.yml
+---
+# vars file for Nagios
+
+    nagios_version: '4.4.5'
+    nagios_plugin_version: '2.2.1'
+    nagios_code_location: /tmp/nagioscore.tar.gz
+    nagios_plugin_location: /tmp/nagios-plugins.tar.gz
+
+
+
+devops@ip-172-31-1-76:~/Nagios/vars$ cd ..
+devops@ip-172-31-1-76:~/Nagios$ cd handlers/
+devops@ip-172-31-1-76:~/Nagios/handlers$ pwd
+/home/devops/Nagios/handlers
+devops@ip-172-31-1-76:~/Nagios/handlers$ ls -ltrh
+total 4.0K
+-rw-rw-r-- 1 devops devops 151 Mar 22 02:22 main.yml
+devops@ip-172-31-1-76:~/Nagios/handlers$ cat main.yml
+---
+# handlers file for Nagios
+- name: restarting services
+  service:
+    name: "{{ item }}"
+    state: restarted
+    enabled: yes
+  loop: "{{ ser }}"
+devops@ip-172-31-1-76:~/Nagios/handlers$
+
+
+devops@ip-172-31-1-76:~/Nagios/handlers$ cd ..
+devops@ip-172-31-1-76:~/Nagios$ pwd
+/home/devops/Nagios
+devops@ip-172-31-1-76:~/Nagios$ ls -ltrh playbook.yml
+-rw-rw-r-- 1 devops devops 62 Mar 22 03:39 playbook.yml
+devops@ip-172-31-1-76:~/Nagios$ cat playbook.yml
+- hosts: all
+  become: yes
+  roles:
+    - /home/devops/Nagios
+devops@ip-172-31-1-76:~/Nagios$
+
+
+
+==========================================
+output 
+
+devops@ip-172-31-1-76:~/Nagios$ ansible-playbook -i inv_sa playbook.yml
+
+PLAY [all] *******************************************************************************************************************************************************************************************************
+
+TASK [Gathering Facts] *******************************************************************************************************************************************************************************************
+ok: [172.31.1.215]
+[DEPRECATION WARNING]: Distribution Ubuntu 18.04 on host 172.31.1.156 should use /usr/bin/python3, but is using /usr/bin/python for backward compatibility with prior Ansible releases. A future Ansible release
+will default to using the discovered platform python for this host. See https://docs.ansible.com/ansible/2.9/reference_appendices/interpreter_discovery.html for more information. This feature will be removed
+in version 2.12. Deprecation warnings can be disabled by setting deprecation_warnings=False in ansible.cfg.
+ok: [172.31.1.156]
+
+TASK [/home/devops/Nagios : Install packages for ubuntu] *********************************************************************************************************************************************************
+skipping: [172.31.1.215] => (item=gcc)
+skipping: [172.31.1.215] => (item=glibc)
+skipping: [172.31.1.215] => (item=glibc-common)
+skipping: [172.31.1.215] => (item=wget)
+skipping: [172.31.1.215] => (item=unzip)
+skipping: [172.31.1.215] => (item=httpd)
+skipping: [172.31.1.156] => (item=autoconf)
+skipping: [172.31.1.156] => (item=gcc)
+skipping: [172.31.1.215] => (item=php)
+skipping: [172.31.1.215] => (item=gd)
+skipping: [172.31.1.156] => (item=libc6)
+skipping: [172.31.1.215] => (item=gd-devel)
+skipping: [172.31.1.156] => (item=make)
+skipping: [172.31.1.215] => (item=perl)
+skipping: [172.31.1.215] => (item=postfix)
+skipping: [172.31.1.156] => (item=wget)
+skipping: [172.31.1.215] => (item=glibc-common)
+skipping: [172.31.1.156] => (item=unzip)
+skipping: [172.31.1.215] => (item=gettext)
+skipping: [172.31.1.215] => (item=automake)
+skipping: [172.31.1.156] => (item=apache2)
+skipping: [172.31.1.215] => (item=autoconf)
+skipping: [172.31.1.156] => (item=php)
+skipping: [172.31.1.215] => (item=openssl-devel)
+skipping: [172.31.1.215] => (item=net-snmp)
+skipping: [172.31.1.156] => (item=libapache2-mod-php7.2)
+skipping: [172.31.1.215] => (item=net-snmp-utils)
+skipping: [172.31.1.156] => (item=libgd-dev)
+skipping: [172.31.1.215] => (item=perl-Net-SNMP)
+skipping: [172.31.1.215] => (item=epel-release)
+skipping: [172.31.1.156] => (item=bc)
+skipping: [172.31.1.215] => (item=python-passlib)
+skipping: [172.31.1.156] => (item=gawk)
+skipping: [172.31.1.156] => (item=dc)
+skipping: [172.31.1.156] => (item=build-essential)
+skipping: [172.31.1.156] => (item=snmp)
+skipping: [172.31.1.156] => (item=libnet-snmp-perl)
+skipping: [172.31.1.156] => (item=gettext)
+skipping: [172.31.1.156] => (item=python-pip)
+
+TASK [/home/devops/Nagios : Install packages for Centos] *********************************************************************************************************************************************************
+skipping: [172.31.1.215] => (item=gcc)
+skipping: [172.31.1.215] => (item=glibc)
+skipping: [172.31.1.215] => (item=glibc-common)
+skipping: [172.31.1.156] => (item=autoconf)
+skipping: [172.31.1.215] => (item=wget)
+skipping: [172.31.1.156] => (item=gcc)
+skipping: [172.31.1.156] => (item=libc6)
+skipping: [172.31.1.215] => (item=unzip)
+skipping: [172.31.1.156] => (item=make)
+skipping: [172.31.1.215] => (item=httpd)
+skipping: [172.31.1.156] => (item=wget)
+skipping: [172.31.1.156] => (item=unzip)
+skipping: [172.31.1.215] => (item=php)
+skipping: [172.31.1.156] => (item=apache2)
+skipping: [172.31.1.215] => (item=gd)
+skipping: [172.31.1.156] => (item=php)
+skipping: [172.31.1.156] => (item=libapache2-mod-php7.2)
+skipping: [172.31.1.215] => (item=gd-devel)
+skipping: [172.31.1.156] => (item=libgd-dev)
+skipping: [172.31.1.215] => (item=perl)
+skipping: [172.31.1.156] => (item=bc)
+skipping: [172.31.1.156] => (item=gawk)
+skipping: [172.31.1.215] => (item=postfix)
+skipping: [172.31.1.156] => (item=dc)
+skipping: [172.31.1.215] => (item=glibc-common)
+skipping: [172.31.1.156] => (item=build-essential)
+skipping: [172.31.1.156] => (item=snmp)
+skipping: [172.31.1.215] => (item=gettext)
+skipping: [172.31.1.156] => (item=libnet-snmp-perl)
+skipping: [172.31.1.215] => (item=automake)
+skipping: [172.31.1.156] => (item=gettext)
+skipping: [172.31.1.156] => (item=python-pip)
+skipping: [172.31.1.215] => (item=autoconf)
+skipping: [172.31.1.215] => (item=openssl-devel)
+skipping: [172.31.1.215] => (item=net-snmp)
+skipping: [172.31.1.215] => (item=net-snmp-utils)
+skipping: [172.31.1.215] => (item=perl-Net-SNMP)
+skipping: [172.31.1.215] => (item=epel-release)
+skipping: [172.31.1.215] => (item=python-passlib)
+
+TASK [/home/devops/Nagios : Downloading the Nagios file  source to temp folder] **********************************************************************************************************************************
+ok: [172.31.1.156]
+ok: [172.31.1.215]
+
+TASK [/home/devops/Nagios : untar the Nagios file] ***************************************************************************************************************************************************************
+ok: [172.31.1.156]
+ok: [172.31.1.215]
+
+TASK [/home/devops/Nagios : creating user_group_binaries] ********************************************************************************************************************************************************
+changed: [172.31.1.156] => (item=./configure --with-httpd-conf=/etc/apache2/sites-enabled)
+changed: [172.31.1.215] => (item=./configure)
+changed: [172.31.1.215] => (item=make all)
+changed: [172.31.1.215] => (item=make install-groups-users)
+changed: [172.31.1.215] => (item=usermod -a -G nagios apache)
+changed: [172.31.1.156] => (item=make all)
+changed: [172.31.1.156] => (item=make install-groups-users)
+changed: [172.31.1.156] => (item=usermod -a -G nagios www-data)
+changed: [172.31.1.156] => (item=make install)
+changed: [172.31.1.156] => (item=make install-daemoninit)
+changed: [172.31.1.215] => (item=make install)
+changed: [172.31.1.156] => (item=make install-commandmode)
+changed: [172.31.1.156] => (item=make install-config)
+changed: [172.31.1.215] => (item=make install-daemoninit)
+changed: [172.31.1.156] => (item=make install-webconf)
+changed: [172.31.1.156] => (item=a2enmod rewrite)
+changed: [172.31.1.215] => (item=make install-commandmode)
+changed: [172.31.1.156] => (item=a2enmod cgi)
+[WARNING]: Consider using 'become', 'become_method', and 'become_user' rather than running sudo
+changed: [172.31.1.215] => (item=make install-config)
+changed: [172.31.1.215] => (item=make install-webconf)
+
+TASK [/home/devops/Nagios : installing passlilb] *****************************************************************************************************************************************************************
+ok: [172.31.1.215]
+ok: [172.31.1.156]
+
+TASK [/home/devops/Nagios : nagios admin account] ****************************************************************************************************************************************************************
+ok: [172.31.1.156]
+ok: [172.31.1.215]
+
+TASK [/home/devops/Nagios : Downloading  plugin zip file] ********************************************************************************************************************************************************
+ok: [172.31.1.156]
+ok: [172.31.1.215]
+
+TASK [/home/devops/Nagios : untar files] *************************************************************************************************************************************************************************
+ok: [172.31.1.156]
+ok: [172.31.1.215]
+
+TASK [/home/devops/Nagios : compilling binaries] *****************************************************************************************************************************************************************
+changed: [172.31.1.156]
+changed: [172.31.1.215]
+
+RUNNING HANDLER [/home/devops/Nagios : restarting services] ******************************************************************************************************************************************************
+changed: [172.31.1.156] => (item=apache2)
+changed: [172.31.1.156] => (item=nagios)
+changed: [172.31.1.215] => (item=httpd)
+changed: [172.31.1.215] => (item=nagios)
+
+PLAY RECAP *******************************************************************************************************************************************************************************************************
+172.31.1.156               : ok=10   changed=3    unreachable=0    failed=0    skipped=2    rescued=0    ignored=0
+172.31.1.215               : ok=10   changed=3    unreachable=0    failed=0    skipped=2    rescued=0    ignored=0
+
+
