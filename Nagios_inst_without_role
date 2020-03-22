@@ -1,0 +1,63 @@
+---
+- hosts: all
+  vars:
+    nagios_version: '4.4.5'
+    nagios_plugin_version: '2.2.1'
+    nagios_code_location: /tmp/nagioscore.tar.gz
+    nagios_plugin_location: /tmp/nagios-plugins.tar.gz
+  become: yes
+  tasks:
+    - name: Install packages for ubuntu and Centos
+      package:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ packages_name }}"
+
+    - name: Downloading the Nagios file  source to temp folder
+      get_url:
+        dest: "{{ nagios_code_location }}"
+        url: "https://github.com/NagiosEnterprises/nagioscore/archive/nagios-{{ nagios_version }}.tar.gz"
+    - name: untar the Nagios file
+      unarchive:
+        src: "{{ nagios_code_location }}"
+        dest: "/tmp/"
+        remote_src: yes
+    - name: creating user_group_binaries
+      shell:
+        cmd: "sudo {{ item }}"
+      args:
+        chdir: "/tmp/nagioscore-nagios-{{ nagios_version }}/"
+      loop: "{{ make_package_list }}"
+
+    - name: installing passlilb
+      pip: name=passlib
+    - name: nagios admin account
+      htpasswd:
+        name: nagiosadmin
+        path: /usr/local/nagios/etc/htpasswd.users
+        password: nagios
+      notify: restarting services
+
+    - name: Downloading  plugin zip file
+      get_url:
+        dest: "/tmp"
+        url: https://github.com/nagios-plugins/nagios-plugins/archive/release-{{ nagios_plugin_version }}.tar.gz
+    - name: untar files
+      unarchive:
+        dest: "/tmp/"
+        remote_src: yes
+        src: "/tmp/nagios-plugins-release-{{ nagios_plugin_version }}.tar.gz"
+
+    - name: compilling binaries
+      shell:
+        cmd: sudo ./tools/setup && sudo ./configure && sudo make && sudo make install
+        chdir: "/tmp/nagios-plugins-release-{{ nagios_plugin_version }}"
+      notify: restarting services
+
+  handlers:
+    - name: restarting services
+      service:
+        name: "{{ item }}"
+        state: restarted
+        enabled: yes
+      loop: "{{ ser }}"
